@@ -6,5 +6,5 @@ import react from "@vitejs/plugin-react";
 // 例: リポジトリ名が "korean-vocab-app" なら base: "/korean-vocab-app/"
 export default defineConfig({
   plugins: [react()],
-  base: "/your-repo-name/",
+  base: "/",
 });
