@@ -39,6 +39,7 @@ export default function KoreanVocabApp() {
   const [formHangul, setFormHangul] = useState("");
   const [formRoman, setFormRoman] = useState("");
   const [formMeaning, setFormMeaning] = useState("");
+  const [formConjugation, setFormConjugation] = useState("");
   const [formError, setFormError] = useState("");
 
   const exitTimeoutRef = useRef(null);
@@ -46,24 +47,30 @@ export default function KoreanVocabApp() {
 
   // ---- load on mount ----
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      const list = raw ? JSON.parse(raw) : [];
-      setWords(Array.isArray(list) ? list : []);
-    } catch (e) {
-      setWords([]);
-    } finally {
-      setLoading(false);
-    }
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await window.storage.get(STORAGE_KEY, false);
+        if (!mounted) return;
+        const list = res ? JSON.parse(res.value) : [];
+        setWords(Array.isArray(list) ? list : []);
+      } catch (e) {
+        if (!mounted) return;
+        setWords([]);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
     return () => {
+      mounted = false;
       if (exitTimeoutRef.current) clearTimeout(exitTimeoutRef.current);
       if (enterRafRef.current) cancelAnimationFrame(enterRafRef.current);
     };
   }, []);
 
-  const persist = useCallback((list) => {
+  const persist = useCallback(async (list) => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+      await window.storage.set(STORAGE_KEY, JSON.stringify(list), false);
     } catch (e) {
       // saving failed silently; keep working in-memory
     }
@@ -137,17 +144,19 @@ export default function KoreanVocabApp() {
     const hangul = formHangul.trim();
     const meaning = formMeaning.trim();
     const roman = formRoman.trim();
+    const conjugation = formConjugation.trim();
     if (!hangul || !meaning) {
       setFormError("단어와 의미는 꼭 입력해 주세요. (単語と意味は必ず入力してください)");
       return;
     }
-    const entry = { id: uid(), hangul, roman, meaning, createdAt: Date.now() };
+    const entry = { id: uid(), hangul, roman, meaning, conjugation, createdAt: Date.now() };
     const newList = [...words, entry];
     setWords(newList);
     await persist(newList);
     setFormHangul("");
     setFormRoman("");
     setFormMeaning("");
+    setFormConjugation("");
     setFormError("");
     setShowForm(false);
   };
@@ -350,6 +359,15 @@ export default function KoreanVocabApp() {
           word-break: keep-all;
         }
         .roman { font-size: 12.5px; color: var(--gold); letter-spacing: 0.03em; font-weight: 500; margin: 0; }
+        .conj {
+          font-size: 12px;
+          color: var(--jade-dark);
+          background: rgba(63, 110, 82, 0.1);
+          border-radius: 8px;
+          padding: 2px 9px;
+          margin: 6px 0 0;
+          display: inline-block;
+        }
         .meaning {
           font-family: 'Noto Serif KR', serif;
           font-size: 22px;
@@ -413,6 +431,7 @@ export default function KoreanVocabApp() {
         .word-item .wi-hangul { font-family: 'Noto Serif KR', serif; font-weight: 700; font-size: 17px; }
         .word-item .wi-roman { font-size: 12px; color: var(--gold); margin-left: 8px; }
         .word-item .wi-meaning { font-size: 13px; color: var(--ink-soft); margin-top: 2px; }
+        .word-item .wi-conj { font-size: 11.5px; color: var(--jade-dark); margin-top: 3px; }
         .del-btn { border: none; background: transparent; color: var(--ink-soft); cursor: pointer; padding: 6px; }
         .del-btn:hover { color: var(--danchae); }
         .empty-list { text-align: center; color: var(--ink-soft); font-size: 13px; padding: 30px 10px; }
@@ -488,6 +507,7 @@ export default function KoreanVocabApp() {
                           <div className="card-face front">
                             <p className="hangul">{top2Card.word.hangul}</p>
                             {top2Card.word.roman && <p className="roman">{top2Card.word.roman}</p>}
+                            {top2Card.word.conjugation && <p className="conj">{top2Card.word.conjugation}</p>}
                           </div>
                           <div className="card-face back">
                             <p className="meaning">{top2Card.word.meaning}</p>
@@ -503,6 +523,7 @@ export default function KoreanVocabApp() {
                           <div className="card-face front">
                             <p className="hangul">{top1Card.word.hangul}</p>
                             {top1Card.word.roman && <p className="roman">{top1Card.word.roman}</p>}
+                            {top1Card.word.conjugation && <p className="conj">{top1Card.word.conjugation}</p>}
                           </div>
                           <div className="card-face back">
                             <p className="meaning">{top1Card.word.meaning}</p>
@@ -518,6 +539,7 @@ export default function KoreanVocabApp() {
                           <div className="card-face front" onClick={advance}>
                             <p className="hangul">{midCard.word.hangul}</p>
                             {midCard.word.roman && <p className="roman">{midCard.word.roman}</p>}
+                            {midCard.word.conjugation && <p className="conj">{midCard.word.conjugation}</p>}
                           </div>
                           <div className="card-face back">
                             <p className="meaning">{midCard.word.meaning}</p>
@@ -533,6 +555,7 @@ export default function KoreanVocabApp() {
                           <div className="card-face front">
                             <p className="hangul">{bottom1Card.word.hangul}</p>
                             {bottom1Card.word.roman && <p className="roman">{bottom1Card.word.roman}</p>}
+                            {bottom1Card.word.conjugation && <p className="conj">{bottom1Card.word.conjugation}</p>}
                           </div>
                           <div className="card-face back">
                             <p className="meaning">{bottom1Card.word.meaning}</p>
@@ -548,6 +571,7 @@ export default function KoreanVocabApp() {
                           <div className="card-face front">
                             <p className="hangul">{bottom2Card.word.hangul}</p>
                             {bottom2Card.word.roman && <p className="roman">{bottom2Card.word.roman}</p>}
+                            {bottom2Card.word.conjugation && <p className="conj">{bottom2Card.word.conjugation}</p>}
                           </div>
                           <div className="card-face back">
                             <p className="meaning">{bottom2Card.word.meaning}</p>
@@ -563,6 +587,7 @@ export default function KoreanVocabApp() {
                           <div className="card-face front">
                             <p className="hangul">{exitCard.word.hangul}</p>
                             {exitCard.word.roman && <p className="roman">{exitCard.word.roman}</p>}
+                            {exitCard.word.conjugation && <p className="conj">{exitCard.word.conjugation}</p>}
                           </div>
                           <div className="card-face back">
                             <p className="meaning">{exitCard.word.meaning}</p>
@@ -597,6 +622,7 @@ export default function KoreanVocabApp() {
                         {w.roman && <span className="wi-roman">{w.roman}</span>}
                       </div>
                       <div className="wi-meaning">{w.meaning}</div>
+                      {w.conjugation && <div className="wi-conj">{w.conjugation}</div>}
                     </div>
                     <button className="del-btn" onClick={() => handleDelete(w.id)} aria-label="삭제">
                       <Trash2 size={17} />
@@ -640,6 +666,10 @@ export default function KoreanVocabApp() {
                 <div className="field">
                   <label>의미 (意味)</label>
                   <input type="text" value={formMeaning} onChange={(e) => setFormMeaning(e.target.value)} placeholder="例: 愛" />
+                </div>
+                <div className="field">
+                  <label>활용 (活用・任意)</label>
+                  <input type="text" value={formConjugation} onChange={(e) => setFormConjugation(e.target.value)} placeholder="예: 사랑해요 (해요체)" />
                 </div>
                 {formError && <p className="form-error">{formError}</p>}
                 <div className="modal-actions">
