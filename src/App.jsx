@@ -262,23 +262,33 @@ export default function VocabApp() {
           --line: #d7dfcd;
         }
 
+        html, body {
+          margin: 0;
+          height: 100%;
+          overscroll-behavior: none;
+        }
+
         .app-root {
           font-family: 'Noto Sans JP', system-ui, sans-serif;
           background: var(--hanji);
           color: var(--ink);
-          min-height: 100vh;
+          height: 100vh;
+          overflow: hidden;
           display: flex;
           justify-content: center;
+          touch-action: pan-y;
+          overscroll-behavior: none;
         }
 
         .shell {
           width: 100%;
           max-width: 430px;
-          min-height: 100vh;
+          height: 100vh;
           background: var(--hanji);
           display: flex;
           flex-direction: column;
           position: relative;
+          overflow: hidden;
         }
 
         .header { padding: 22px 20px 14px; }
@@ -319,7 +329,7 @@ export default function VocabApp() {
         }
         .stat-dot { width: 6px; height: 6px; border-radius: 50%; }
 
-        .main { flex: 1; padding: 10px 20px 20px; display: flex; flex-direction: column; }
+        .main { flex: 1; padding: 10px 20px 20px; display: flex; flex-direction: column; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 
         /* ---- start screen ---- */
         .start-screen {
@@ -374,7 +384,7 @@ export default function VocabApp() {
           display: flex;
           align-items: flex-start;
           justify-content: center;
-          padding-top: 12px;
+          padding-top: 128px;
           perspective: 1400px;
         }
         .carousel-stage { position: relative; width: 100%; height: 400px; }
