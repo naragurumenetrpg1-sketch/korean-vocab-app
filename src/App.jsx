@@ -59,6 +59,7 @@ export default function VocabApp() {
   const [formError, setFormError] = useState("");
 
   const exitTimeoutRef = useRef(null);
+  const historyRef = useRef([]);
   const enterRafRef = useRef(null);
   const fileInputRef = useRef(null);
   const [importMessage, setImportMessage] = useState("");
@@ -150,6 +151,9 @@ export default function VocabApp() {
     if (isAnimating || !midCard || !top1Card || !bottom1Card || !bottom2Card || words.length === 0) return;
     setIsAnimating(true);
 
+    historyRef.current.push({ top2Card, top1Card, midCard, bottom1Card, bottom2Card });
+    if (historyRef.current.length > 50) historyRef.current.shift();
+
     const excludeIds = [top1Card.word.id, midCard.word.id, bottom1Card.word.id, bottom2Card.word.id];
     const newWord = pickRandomExcluding(words, excludeIds);
 
@@ -175,6 +179,34 @@ export default function VocabApp() {
     }, TRANSITION_MS);
   }, [isAnimating, midCard, top1Card, bottom1Card, bottom2Card, top2Card, words]);
 
+  const goBack = useCallback(() => {
+    if (isAnimating || historyRef.current.length === 0) return;
+    const prev = historyRef.current.pop();
+    setIsAnimating(true);
+    setEnteringId(null);
+    setExitCard(null);
+    setTop2Card(prev.top2Card);
+    setTop1Card(prev.top1Card);
+    setMidCard(prev.midCard);
+    setBottom1Card(prev.bottom1Card);
+    setBottom2Card(prev.bottom2Card);
+
+    if (exitTimeoutRef.current) clearTimeout(exitTimeoutRef.current);
+    exitTimeoutRef.current = setTimeout(() => {
+      setIsAnimating(false);
+    }, TRANSITION_MS);
+  }, [isAnimating]);
+
+  const handleCardsTap = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    if (x < rect.width / 2) {
+      advance();
+    } else {
+      goBack();
+    }
+  };
+
   const resetCarousel = () => {
     setTop2Card(null);
     setTop1Card(null);
@@ -182,6 +214,7 @@ export default function VocabApp() {
     setBottom1Card(null);
     setBottom2Card(null);
     setExitCard(null);
+    historyRef.current = [];
   };
 
   const exportWords = () => {
@@ -473,6 +506,7 @@ export default function VocabApp() {
           justify-content: center;
           padding-top: 128px;
           perspective: 1400px;
+          cursor: pointer;
         }
         .carousel-stage { position: relative; width: 100%; height: 400px; }
         .card-slot {
@@ -677,21 +711,17 @@ export default function VocabApp() {
               <h1>暗記単語帳</h1>
               <p>単語ファイルを読み込んで学習を始めよう！<br />言語ごとにファイルを分けてれば、<br />その日の気分で切り替えて使える！</p>
 
-              {importMessage && <p className="import-message">{importMessage}</p>}
-
               <div className="start-actions">
+                {!loading && words.length > 0 && (
+                  <p className="saved-note">既にファイルを読み込んでいます</p>
+                )}
                 <button className="btn btn-primary" onClick={triggerImport}>
                   <FileUp size={16} /> ファイルを読み込む
                 </button>
                 {!loading && words.length > 0 && (
-                  <>
-                    <p className="saved-note" style={{ marginTop: 10 }}>
-                      保存されている単語が{words.length}語あります
-                    </p>
-                    <button className="btn btn-ghost" onClick={goToMenu}>
-                      この単語で始める
-                    </button>
-                  </>
+                  <button className="btn btn-ghost" onClick={goToMenu}>
+                    この単語で始める
+                  </button>
                 )}
                 {!loading && words.length === 0 && (
                   <button className="btn btn-ghost" onClick={goToMenu}>
@@ -824,7 +854,7 @@ export default function VocabApp() {
                   </div>
                 ) : (
                   <>
-                    <div className="carousel-wrap">
+                    <div className="carousel-wrap" onClick={handleCardsTap}>
                       <div className="carousel-stage">
                         {top2Card && (
                           <div key={top2Card.renderId} className={slotClass("card-slot slot-top2", top2Card)}>
@@ -861,7 +891,7 @@ export default function VocabApp() {
                         {midCard && (
                           <div key={midCard.renderId} className={slotClass("card-slot slot-mid", midCard)}>
                             <div className={`card-inner ${midCard.flipped ? "flipped" : ""}`}>
-                              <div className="card-face front" onClick={advance}>
+                              <div className="card-face front">
                                 <p className="hangul">{midCard.word.hangul}</p>
                                 {midCard.word.roman && <p className="roman">{midCard.word.roman}</p>}
                                 {midCard.word.conjugation && <p className="conj">{midCard.word.conjugation}</p>}
@@ -923,7 +953,7 @@ export default function VocabApp() {
                         )}
                       </div>
                     </div>
-                    <p className="tap-hint">カードをタップすると意味を見ながら次に進みます</p>
+                    <p className="tap-hint">画面の左側をタップで次へ、右側をタップで戻れます</p>
                   </>
                 )
               ) : (
