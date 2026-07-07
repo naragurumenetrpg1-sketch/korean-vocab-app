@@ -5,7 +5,6 @@ const STORAGE_KEY = "korean-vocab-words";
 const STAMPS_KEY = "vocab-app-login-stamps";
 const SOUND_KEY = "vocab-app-sound-on";
 const TRANSITION_MS = 170;
-const IDLE_TICK_MS = 2500;
 
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -140,20 +139,17 @@ export default function VocabApp() {
   }, []);
 
   const toggleSound = () => {
-    setSoundOn((prev) => {
-      const next = !prev;
-      soundOnRef.current = next;
-      window.storage.set(SOUND_KEY, String(next), false).catch(() => {});
-      if (next) {
-        // unlock/resume audio in response to this user gesture
-        try {
-          getAudioCtx();
-        } catch (e) {
-          // if audio can't start here, playXSound() will just silently no-op later
-        }
+    const next = !soundOn;
+    soundOnRef.current = next;
+    setSoundOn(next);
+    window.storage.set(SOUND_KEY, String(next), false).catch(() => {});
+    if (next) {
+      try {
+        getAudioCtx();
+      } catch (e) {
+        // ignore; ticking sound will just stay silent if this fails
       }
-      return next;
-    });
+    }
   };
 
   const getAudioCtx = () => {
@@ -169,44 +165,6 @@ export default function VocabApp() {
       return audioCtxRef.current;
     } catch (e) {
       return null;
-    }
-  };
-
-  // "シュッ！" - a quick filtered noise whoosh for turning a card
-  const playFlipSound = () => {
-    if (!soundOnRef.current) return;
-    const ctx = getAudioCtx();
-    if (!ctx) return;
-    try {
-      const now = ctx.currentTime;
-      const duration = 0.16;
-      const bufferSize = Math.max(1, Math.floor(ctx.sampleRate * duration));
-      const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-      const data = buffer.getChannelData(0);
-      for (let i = 0; i < bufferSize; i++) {
-        data[i] = Math.random() * 2 - 1;
-      }
-      const noise = ctx.createBufferSource();
-      noise.buffer = buffer;
-
-      const filter = ctx.createBiquadFilter();
-      filter.type = "bandpass";
-      filter.Q.value = 0.7;
-      filter.frequency.setValueAtTime(2600, now);
-      filter.frequency.exponentialRampToValueAtTime(700, now + duration);
-
-      const gain = ctx.createGain();
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(0.4, now + 0.012);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-
-      noise.connect(filter);
-      filter.connect(gain);
-      gain.connect(ctx.destination);
-      noise.start(now);
-      noise.stop(now + duration);
-    } catch (e) {
-      // ignore audio errors
     }
   };
 
@@ -264,7 +222,6 @@ export default function VocabApp() {
     if (isAnimating || !midCard || !top1Card || !bottom1Card || !bottom2Card || words.length === 0) return;
     setIsAnimating(true);
     lastActionRef.current = Date.now();
-    playFlipSound();
 
     historyRef.current.push({ top2Card, top1Card, midCard, bottom1Card, bottom2Card });
     if (historyRef.current.length > 50) historyRef.current.shift();
@@ -299,7 +256,6 @@ export default function VocabApp() {
     const prev = historyRef.current.pop();
     setIsAnimating(true);
     lastActionRef.current = Date.now();
-    playFlipSound();
     setEnteringId(null);
     setExitCard(null);
     setTop2Card(prev.top2Card);
@@ -315,10 +271,15 @@ export default function VocabApp() {
   }, [isAnimating]);
 
   const handleCardsTap = () => {
+    try {
+      getAudioCtx();
+    } catch (e) {
+      // ignore; ticking sound will just stay silent if this fails
+    }
     advance();
   };
 
-  // idle "ticking clock" sound while sitting on the cards screen without tapping
+  // continuous "ticking clock" sound while on the cards screen
   useEffect(() => {
     if (tickIntervalRef.current) {
       clearInterval(tickIntervalRef.current);
@@ -326,12 +287,9 @@ export default function VocabApp() {
     }
     if (screen !== "cards") return undefined;
 
-    lastActionRef.current = Date.now();
     tickIntervalRef.current = setInterval(() => {
       if (!soundOnRef.current) return;
-      if (Date.now() - lastActionRef.current > IDLE_TICK_MS) {
-        playTickSound();
-      }
+      playTickSound();
     }, 1000);
 
     return () => {
