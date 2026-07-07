@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Plus, X, Trash2, Layers, BookMarked, Download, Upload, ArrowLeft, FileUp, CalendarDays, ChevronLeft, ChevronRight, ThumbsUp, Undo2 } from "lucide-react";
+import { Plus, X, Trash2, Layers, BookMarked, Download, Upload, ArrowLeft, FileUp, CalendarDays, ChevronLeft, ChevronRight, ThumbsUp, Undo2, Volume2, VolumeX } from "lucide-react";
 
 const STORAGE_KEY = "korean-vocab-words";
 const STAMPS_KEY = "vocab-app-login-stamps";
+const SOUND_KEY = "vocab-app-sound-on";
 const TRANSITION_MS = 170;
+const IDLE_TICK_MS = 2500;
 
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -68,6 +70,13 @@ export default function VocabApp() {
   const [showCalendar, setShowCalendar] = useState(false);
   const todayNow = todayParts();
   const [viewYear, setViewYear] = useState(todayNow.y);
+
+  const [soundOn, setSoundOn] = useState(true);
+  const soundOnRef = useRef(true);
+  const audioCtxRef = useRef(null);
+  const lastActionRef = useRef(Date.now());
+  const tickIntervalRef = useRef(null);
+  const tickPhaseRef = useRef(true);
   const [viewMonth, setViewMonth] = useState(todayNow.m);
 
   // ---- load on mount ----
@@ -97,6 +106,17 @@ export default function VocabApp() {
         setStamps([]);
       }
     })();
+    (async () => {
+      try {
+        const res = await window.storage.get(SOUND_KEY, false);
+        if (!mounted) return;
+        const value = res ? res.value === "true" : true;
+        setSoundOn(value);
+        soundOnRef.current = value;
+      } catch (e) {
+        // keep default (on)
+      }
+    })();
     return () => {
       mounted = false;
       if (exitTimeoutRef.current) clearTimeout(exitTimeoutRef.current);
@@ -119,6 +139,76 @@ export default function VocabApp() {
       // saving failed silently; keep working in-memory
     }
   }, []);
+
+  const toggleSound = () => {
+    setSoundOn((prev) => {
+      const next = !prev;
+      soundOnRef.current = next;
+      window.storage.set(SOUND_KEY, String(next), false).catch(() => {});
+      if (next) {
+        // unlock/resume audio in response to this user gesture
+        getAudioCtx();
+      }
+      return next;
+    });
+  };
+
+  const getAudioCtx = () => {
+    if (!audioCtxRef.current) {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) return null;
+      audioCtxRef.current = new AudioContextClass();
+    }
+    if (audioCtxRef.current.state === "suspended") {
+      audioCtxRef.current.resume();
+    }
+    return audioCtxRef.current;
+  };
+
+  const playFlipSound = () => {
+    if (!soundOnRef.current) return;
+    const ctx = getAudioCtx();
+    if (!ctx) return;
+    try {
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "triangle";
+      osc.frequency.setValueAtTime(680, now);
+      osc.frequency.exponentialRampToValueAtTime(220, now + 0.1);
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(0.16, now + 0.008);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.13);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.14);
+    } catch (e) {
+      // ignore audio errors
+    }
+  };
+
+  const playTickSound = (isTick) => {
+    if (!soundOnRef.current) return;
+    const ctx = getAudioCtx();
+    if (!ctx) return;
+    try {
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "square";
+      osc.frequency.setValueAtTime(isTick ? 1500 : 1100, now);
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(0.05, now + 0.004);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.045);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.05);
+    } catch (e) {
+      // ignore audio errors
+    }
+  };
 
   // set up the 5-card carousel whenever the cards screen needs one
   useEffect(() => {
@@ -150,6 +240,8 @@ export default function VocabApp() {
   const advance = useCallback(() => {
     if (isAnimating || !midCard || !top1Card || !bottom1Card || !bottom2Card || words.length === 0) return;
     setIsAnimating(true);
+    lastActionRef.current = Date.now();
+    playFlipSound();
 
     historyRef.current.push({ top2Card, top1Card, midCard, bottom1Card, bottom2Card });
     if (historyRef.current.length > 50) historyRef.current.shift();
@@ -183,6 +275,8 @@ export default function VocabApp() {
     if (isAnimating || historyRef.current.length === 0) return;
     const prev = historyRef.current.pop();
     setIsAnimating(true);
+    lastActionRef.current = Date.now();
+    playFlipSound();
     setEnteringId(null);
     setExitCard(null);
     setTop2Card(prev.top2Card);
@@ -200,6 +294,31 @@ export default function VocabApp() {
   const handleCardsTap = () => {
     advance();
   };
+
+  // idle "ticking clock" sound while sitting on the cards screen without tapping
+  useEffect(() => {
+    if (tickIntervalRef.current) {
+      clearInterval(tickIntervalRef.current);
+      tickIntervalRef.current = null;
+    }
+    if (screen !== "cards") return undefined;
+
+    lastActionRef.current = Date.now();
+    tickIntervalRef.current = setInterval(() => {
+      if (!soundOnRef.current) return;
+      if (Date.now() - lastActionRef.current > IDLE_TICK_MS) {
+        playTickSound(tickPhaseRef.current);
+        tickPhaseRef.current = !tickPhaseRef.current;
+      }
+    }, 1000);
+
+    return () => {
+      if (tickIntervalRef.current) {
+        clearInterval(tickIntervalRef.current);
+        tickIntervalRef.current = null;
+      }
+    };
+  }, [screen]);
 
   const resetCarousel = () => {
     setTop2Card(null);
@@ -405,7 +524,7 @@ export default function VocabApp() {
           overflow: hidden;
         }
 
-        .header { padding: 22px 20px 14px; }
+        .header { padding: 22px 56px 14px 20px; }
         .header-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
         .header-titles { display: flex; align-items: center; gap: 8px; }
         .back-btn {
@@ -589,6 +708,12 @@ export default function VocabApp() {
         }
         .back-fab:active { transform: scale(0.94); }
         .back-fab:disabled { opacity: 0.35; cursor: default; }
+        .sound-toggle {
+          position: absolute; top: 16px; right: 16px; width: 36px; height: 36px; border-radius: 50%;
+          background: var(--paper); border: 1.5px solid var(--line); color: var(--ink-soft);
+          display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 20;
+        }
+        .sound-toggle:active { transform: scale(0.92); }
 
         .empty-state {
           flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -696,6 +821,13 @@ export default function VocabApp() {
       `}</style>
 
       <div className="shell">
+        <button
+          className="sound-toggle"
+          onClick={toggleSound}
+          aria-label={soundOn ? "サウンドをオフにする" : "サウンドをオンにする"}
+        >
+          {soundOn ? <Volume2 size={16} /> : <VolumeX size={16} />}
+        </button>
         <input
           ref={fileInputRef}
           type="file"
